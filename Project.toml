@@ -3,11 +3,17 @@ uuid = "7fc12173-ed04-4e20-9642-1f2134e2a757"
 authors = ["Andrey Oskin"]
 version = "0.1.0"
 
-[extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+[deps]
+Setfield = "efcf1570-3423-57d1-acb7-fd33fddbac46"
+Shapefile = "8e980c4a-a4fe-5da2-b3a7-4b4b0353a2f4"
 
 [compat]
 julia = "1"
+Setfield = "0.7.0"
+Shapefile = "0.7.0"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
