@@ -2,10 +2,10 @@ module TimeZoneLookup
 
 using Shapefile
 using Setfield
-import Base: isless, zero
+import Base: isless, zero, similar
 
 export buildedges, mergeedges, buildedges!, buildmega, boundingbox, TrapezoidalSearchNode, TrapezoidData, query, Trapezoid, E, V
-export faceof, EData, lhs, rhs, lp, rp
+export faceof, EData, lhs, rhs, lp, rp, update!
 
 const PRECEDENCE = [
  ("Asia/Hebron", "Asia/Jerusalem"),
@@ -42,8 +42,9 @@ end
 
 lhs(x::EData) = x.l
 rhs(x::EData) = x.r
-lp(x::EData) = x.e.p
-rp(x::EData) = x.e.q
+edge(x::EData) = x.e
+lp(x::EData) = edge(x).p
+rp(x::EData) = edge(x).q
 
 function faceof(x::EData, r::V)
     e = x.e
@@ -87,17 +88,13 @@ end
 
 mutable struct TrapezoidData{T} <: AbstractTrapezoidData
     t::Trapezoid{T}
-    lb::Union{TrapezoidData{T}, Nothing} # Left bottom adjacent trapezoid
-    lt::Union{TrapezoidData{T}, Nothing} # Left top adjacent trapezoid
     rb::Union{TrapezoidData{T}, Nothing} # Right bottom adjacent trapezoid
     rt::Union{TrapezoidData{T}, Nothing} # Right top adjacent trapezoid
     node::Union{TrapezoidalSearchNode{T, TrapezoidData{T}}, Nothing}    # Node where this trapezoid can be found
 end
 
-const MaybeTrapezoid{T} = Union{TrapezoidData{T}, Nothing}
-
 TrapezoidalSearchNode(data::TrapezoidData{T}) where T = TrapezoidalSearchNode{T, TrapezoidData{T}}(nothing, nothing, (0, zero(E{T})), data)
-TrapezoidData(t::Trapezoid{T}) where T = TrapezoidData(t, nothing, nothing, nothing, nothing, nothing)
+TrapezoidData(t::Trapezoid{T}) where T = TrapezoidData(t, nothing, nothing, nothing)
 
 
 function buildmega(table)
@@ -263,4 +260,152 @@ function query(node::TrapezoidalSearchNode, p)
     end
 end
 
+function buildnode(t)
+    td = TrapezoidData(t)
+    tn = TrapezoidalSearchNode(td)
+    td.node = tn
+
+    return td, tn
 end
+
+similar(node::TrapezoidalSearchNode{T, T1}) where {T, T1} = TrapezoidalSearchNode{T, T1}(nothing, nothing, (0, zero(E{T}), nothing))
+
+function update!(tree::TrapezoidalSearchNode, s)
+    td = query(tree, lp(s))
+    t = td.t
+    p = lp(s)
+    q = rp(s)
+    e = edge(s)
+
+    node = td.node
+    prevnodeexists = false
+    tdprev = td
+
+    if p.x > t.leftp.x && p.x < t.rightp.x
+        # Transforming node to internal and adding type 1 condition
+        node.data.node = nothing
+        node.data = nothing
+        node.condition = (1, E(p, p))
+
+        # Split initial trapezoid and add results to the left and right nodes
+        t1 = Trapezoid(t.leftp, p, t.top, t.bottom, t.face)
+        td1, tn1 = buildnode(t1)
+        node.left = tn1
+
+        t2 = Trapezoid(p, t.rightp, t.top, t.bottom, t.face)
+        td2, tn2 = buildnode(t2)
+        td2.rb = td.rb
+        td2.rt = td.rt
+        node.right = tn2
+
+        # Fake left trapezoid, just to simplify things
+        prevnodeexists = true
+        node = tn2
+        td = td2
+        t = t2
+    elseif p.x == t.rightp.x
+        # Searching right adjacent node
+        if sideof(s, t.rightp)
+            td = td.rt
+        else
+            td = td.rb
+        end
+
+        # It shouldn't happen though
+        if td === nothing
+            return nothing
+        end
+        prevnodeexists = true
+        node = td.node
+        t = td.t
+    end
+
+    splitting = true
+    istopactive = false
+    isbotactive = false
+    while splitting
+        # TODO: what if t.rightp.x == q.x?
+        if t.rightp.x > q.x
+            splitting = false
+            # Introduce rightmost node and split trapezoid vertically
+            t1 = Trapezoid(q, t.rightp, t.top, t.bottom, t.face)
+            td1, tn1 = buildnode(t1)
+            td1.rt = td.rt
+            td1.rb = td.rb
+            node.right = tn1
+
+            t2 = Trapezoid(t.leftp, q, t.top, t.bottom, t.face)
+            td2, tn2 = buildnode(t2)
+            node.left = tn2
+
+            node.data.node = nothing
+            node.data = nothing
+            node.condition = (1, E(q, q))
+
+            tdprev = td1
+            t = t2
+            td = td2
+            node = tn2
+        end
+
+        # we are building upper and lower division of the current trapezoid
+        if !istopactive
+            istopactive = true
+            ttop = Trapezoid(t.leftp, t.rightp, t.top, e, lhs(s))
+            ttopd, ttopn = buildnode(ttop)
+            if prevnodeexists
+                tdprev.rt = ttopd
+            end
+        else
+            if ttop.top == t.top
+                ttop.rightp = t.rightp
+            else
+                ttop2 = Trapezoid(t.leftp, t.rightp, t.top, e, lhs(s))
+                ttopd2, ttopn = buildnode(ttop2)
+                ttopd.rb = ttopd2
+                ttopd = ttopd2
+                ttop2 = ttop
+            end
+        end
+
+        if !isbotactive
+            isbotactive = true
+            tbot = Trapezoid(t.leftp, t.rightp, e, t.bottom, rhs(s))
+            tbotd, tbotn = buildnode(tbot)
+            if prevnodeexists
+                tdprev.rb = tbotd
+            end
+        else
+            if tbot.bot == t.bot
+                tbot.rightp = t.rightp
+            else
+                tbot2 = Trapezoid(t.leftp, t.rightp, t.top, e, rhs(s))
+                tbotd2, tbotn = buildnode(tbot2)
+                tbotd.rt = tbotd2
+                tbotd = tbotd2
+                tbot2 = tbot
+            end
+        end
+
+        node.data.node = nothing
+        node.data = nothing
+        node.condition = (2, e)
+        node.left = ttopn
+        node.right = tbotn
+
+        if splitting
+            if sideof(s, t.rightp)
+                td = td.rt
+            else
+                td = td.rb
+            end
+            t = td.t
+            node = td.node
+        else
+            ttopd.rt = tdprev
+            tbotd.rb = tdprev
+        end
+    end
+end
+
+end # module
