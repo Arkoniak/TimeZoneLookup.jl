@@ -6,7 +6,7 @@ using AbstractTrees
 import Base: isless, zero, similar, show
 
 export buildedges, mergeedges, buildedges!, buildmega, boundingbox, TrapezoidalSearchNode, TrapezoidData, query, Trapezoid, E, V
-export faceof, EData, lhs, rhs, lp, rp, update!, sideof
+export faceof, EData, lhs, rhs, lp, rp, update!, sideof, buildsearch
 
 const PRECEDENCE = [
  ("Asia/Hebron", "Asia/Jerusalem"),
@@ -304,14 +304,14 @@ function buildnode(leftp, rightp, top, bottom, face)
     node = TrapezoidalSearchNode(t)
     t.node = node
 
-    return t, node
+    return t
 end
 
 function buildnode(t)
     node = TrapezoidalSearchNode(t)
     t.node = node
 
-    return t, node
+    return t
 end
 
 similar(node::TrapezoidalSearchNode{T, T1}) where {T, T1} = TrapezoidalSearchNode{T, T1}(nothing, nothing, (0, zero(E{T}), nothing))
@@ -331,138 +331,160 @@ function findadjacent(s, t)
     return sideof(s, t.rightp) ? t.rt : t.rb
 end
 
-function update!(tree::TrapezoidalSearchNode, s)
-    t = query(tree, lp(s))
+function initialsplit!(t, s)
     p = lp(s)
-    q = rp(s)
-    e = edge(s)
-
+    if p.x == t.rightp.x
+        t = findadjacent(s, t)
+    end
     node = t.node
-    prevnodeexists = false
-    tprev = t
 
     if p.x > t.leftp.x && p.x < t.rightp.x
         # Transforming node to internal and adding type 1 condition
-        node.data.node = nothing
+        t.node = nothing
         node.data = nothing
         node.condition = (1, E(p, p))
 
         # Split initial trapezoid and add results to the left and right nodes
         # Fake right trapezoid, just to simplify things
-        t2, n2 = buildnode(p, t.rightp, t.top, t.bottom, t.face)
+        t2 = buildnode(p, t.rightp, t.top, t.bottom, t.face)
         t2.rb = t.rb
         t2.rt = t.rt
-        node.right = n2
+        node.right = t2.node
 
         t.rightp = p
-        t, n1 = buildnode(t)
-        node.left = n1
+        t = buildnode(t)
+        node.left = t.node
 
-        prevnodeexists = true
-        node = n2
+        t2.lt = t
+        t2.lb = t
         t = t2
-    elseif p.x == t.rightp.x
-        t = findadjacent(s, t)
-        prevnodeexists = true
-        node = t.node
     end
+
+    topt = buildnode(p, p, t.top, edge(s), lhs(s))
+    bott = buildnode(p, p, edge(s), t.bottom, rhs(s))
+    if t.lt !== nothing
+        t.lt.rt = topt
+        topt.lt = t.lt
+    end
+    if t.lb !== nothing
+        t.lb.rb = bott
+        bott.lb = t.lb
+    end
+
+    return t, topt, bott
+end
+
+# TODO: next couple of functions is redundant
+function topsplit!(t, s, topt)
+    rightp = min(t.rightp, rp(s))
+
+    if topt.top == t.top
+        topt.rightp = rightp
+    else
+        topt2 = buildnode(t.leftp, rightp, t.top, edge(s), lhs(s))
+        topt.rb = topt2
+        topt2.lb = topt
+        topt = topt2
+    end
+
+    return topt
+end
+
+function bottomsplit!(t, s, bott)
+    rightp = min(t.rightp, rp(s))
+
+    if bott.bottom == t.bottom
+        bott.rightp = rightp
+    else
+        bott2 = buildnode(t.leftp, rightp, edge(s), t.bottom, rhs(s))
+        bott.rt = bott2
+        bott2.lt = bott
+        bott = bott2
+    end
+
+    return bott
+end
+
+function finalsplit!(t, s)
+    q = rp(s)
+    node = t.node
+    node.data = nothing
+    t.node = nothing
+
+    if t.rightp.x < q.x
+        return true, findadjacent(s, t)
+    end
+
+    if t.rightp.x > q.x
+        # Introduce rightmost node and split trapezoid vertically
+        t.leftp = q
+        t = buildnode(t)
+        node.left.data.rt = t
+        t.lt = node.left.data
+
+        node.right.data.rb = t
+        t.lb = node.right.data
+
+        t2 = buildnode(node.left.data)
+        node.left.left = t2.node
+        node.left.right = node.right
+        node.left.condition = node.condition
+        node.left.data = nothing
+
+        node.right = t.node
+        node.condition = (1, E(q, q))
+    end
+
+    if t.rightp.x == q.x
+        if t.rt !== nothing
+            node.left.data.rt = t.rt
+            t.rt.lt = node.left.data
+        end
+
+        if t.rb !== nothing
+            node.right.data.rb = t.rb
+            t.rb.lb = node.right.data
+        end
+    end
+
+    return false, t
+end
+
+function update!(tree::TrapezoidalSearchNode, s)
+    p = lp(s)
+    t = query(tree, p)
+
+    # Fix edge case
+    if (t.leftp == p) & (t.top.p == p)
+        if !sideof(s, t.top.q)
+            t = t.lb.rt
+        end
+    end
+
+    t, topt, bott = initialsplit!(t, s)
 
     splitting = true
-    istopactive = false
-    isbotactive = false
-    local topt, bott, topn, botn
     while splitting
-        if t.rightp.x > q.x
-            splitting = false
-            # Introduce rightmost node and split trapezoid vertically
-            t1, n1 = buildnode(q, t.rightp, t.top, t.bottom, t.face)
-            t1.rt = t.rt
-            t1.rb = t.rb
-            node.right = n1
-
-            t2, n2 = buildnode(t.leftp, q, t.top, t.bottom, t.face)
-            node.left = n2
-
-            node.data.node = nothing
-            node.data = nothing
-            node.condition = (1, E(q, q))
-
-            tprev = t1
-            t = t2
-            node = n2
-        end
-
-        # TODO: what if t.rightp.x == q.x? Is it correct?
-        if t.rightp.x == q.x
-            splitting = false
-            tprev = t
-        end
-
         # we are building upper and lower division of the current trapezoid
-        if !istopactive
-            istopactive = true
-            topt, topn = buildnode(t.leftp, t.rightp, t.top, e, lhs(s))
-            if prevnodeexists
-                tprev.rt = topt
-                topt.lt = tprev
-            else
-                if t.lt !== nothing
-                    t.lt.rt = topt
-                    topt.lt = t.lt
-                end
-            end
-        else
-            if topt.top == t.top
-                topt.rightp = t.rightp
-            else
-                topt2, topn = buildnode(t.leftp, t.rightp, t.top, e, lhs(s))
-                topt.rb = topt2
-                topt2.lb = topt
-                topt = topt2
-            end
-        end
-
-        if !isbotactive
-            isbotactive = true
-            bott, botn = buildnode(t.leftp, t.rightp, e, t.bottom, rhs(s))
-            if prevnodeexists
-                tprev.rb = bott
-                bott.lb = tprev
-            else
-                if t.lb !== nothing
-                    t.lb.rb = bott
-                    bott.lb = t.lb
-                end
-            end
-        else
-            if bott.bottom == t.bottom
-                bott.rightp = t.rightp
-            else
-                bott2, botn = buildnode(t.leftp, t.rightp, t.top, e, rhs(s))
-                bott.rt = bott2
-                bott2.lt = bott
-                bott = bott2
-            end
-        end
-        # @info "Divisions" topt bott istopactive isbotactive
-
-        node.data.node = nothing
-        node.data = nothing
-        node.condition = (2, e)
-        node.left = topn
-        node.right = botn
-
-        if splitting
-            t = findadjacent(s, t)
-            node = t.node
-        else
-            topt.rt = tprev
-            bott.rb = tprev
-            tprev.lt = topt
-            tprev.lb = tprev
-        end
-        @info "Node data" node t
+        topt = topsplit!(t, s, topt)
+        bott = bottomsplit!(t, s, bott)
+        
+        t.node.left = topt.node
+        t.node.right = bott.node
+        t.node.condition = (2, edge(s))
+        
+        splitting, t = finalsplit!(t, s)
     end
+end
+
+function buildsearch(s, lb, rt)
+    bb = buildnode(lb, rt, E(V(lb.x, rt.y), rt), E(lb, V(rt.x, lb.y)), -1)
+    root = bb.node
+    for item in s
+        update!(root, item)
+    end
+
+    return root
 end
 
 end # module

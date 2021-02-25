@@ -26,7 +26,8 @@ end
          EData(E(V(30, 10), V(40, 20)), 1, -1),
          EData(E(V(20, 20), V(40, 20)), -1, 1)
         ]
-    bb, root = buildnode(V(0, 0), V(50, 50), E(V(0, 50), V(50, 50)), E(V(0, 0), V(50, 0)), -1)
+    bb = buildnode(V(0, 0), V(50, 50), E(V(0, 50), V(50, 50)), E(V(0, 0), V(50, 0)), -1)
+    root = bb.node
 
     update!(root, S[2])
 
