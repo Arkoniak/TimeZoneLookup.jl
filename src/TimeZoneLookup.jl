@@ -328,7 +328,7 @@ function findadjacent(s, t)
     end
 
     # General position
-    return sideof(s, t.rightp) ? t.rt : t.rb
+    return sideof(s, t.rightp) ? t.rb : t.rt
 end
 
 function initialsplit!(t, s)
