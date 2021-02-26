@@ -380,6 +380,10 @@ function topsplit!(t, s, topt)
 
     if topt.top == t.top
         topt.rightp = rightp
+        topt.rt = t.rt
+        if t.rt !== nothing
+            topt.rt.lt = topt
+        end
     else
         topt2 = buildnode(t.leftp, rightp, t.top, edge(s), lhs(s))
         topt.rb = topt2
@@ -395,6 +399,10 @@ function bottomsplit!(t, s, bott)
 
     if bott.bottom == t.bottom
         bott.rightp = rightp
+        bott.rb = t.rb
+        if t.rb !== nothing
+            bott.rb.lb = bott
+        end
     else
         bott2 = buildnode(t.leftp, rightp, edge(s), t.bottom, rhs(s))
         bott.rt = bott2
@@ -416,6 +424,12 @@ function finalsplit!(t, s)
     end
 
     if t.rightp.x > q.x
+        if t.rt !== nothing
+            t.rt.lt = t
+        end
+        if t.rb !== nothing
+            t.rb.lb = t
+        end
         # Introduce rightmost node and split trapezoid vertically
         t.leftp = q
         t = buildnode(t)
