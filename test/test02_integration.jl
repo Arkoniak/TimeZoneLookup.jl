@@ -93,6 +93,20 @@ end
     end
 end
 
+@testset "Incomplete Eye" begin
+    S = [EData(E(V(50, 90), V(90, 50)), 1, -1),
+         EData(E(V(10, 50), V(30, 20)), -1, 1),
+         EData(E(V(20, 80), V(50, 90)), 1, -1),
+         EData(E(V(30, 20), V(60, 10)), -1, 1),
+        ]
+    for sp in permutations(S)
+        tree = buildsearch(sp, V(0, 0), V(100, 100))
+        res = calcpoints(tree)
+        @test res[1] == 1094
+    end
+
+end
+
 end
 
 end #module

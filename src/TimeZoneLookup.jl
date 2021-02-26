@@ -173,7 +173,7 @@ end
 function buildedges(poly, id)
     points = poly.points
     parts = poly.parts
-    res = Vector{Tuple{E{typeof(points[1].x)}, Int, Int}}(undef, length(points) - length(parts))
+    res = Vector{EData{typeof(points[1].x)}}(undef, length(points) - length(parts))
     @inbounds for k in eachindex(parts)
         i1 = parts[k] + 2
         i2 = k == length(parts) ? length(points) : parts[k + 1]
@@ -182,9 +182,9 @@ function buildedges(poly, id)
             p = points[i]
             cur = V(p.x, p.y)
             if prev < cur
-                res[i - k] = (E(prev, cur), id, -1)
+                res[i - k] = EData(E(prev, cur), -1, id)
             else
-                res[i - k] = (E(cur, prev), -1, id)
+                res[i - k] = EData(E(cur, prev), id, -1)
             end
             prev = cur
         end
@@ -205,39 +205,39 @@ end
 function mergeedges(edges, table; precedence = PRECEDENCE)
     precedence = names2indices(precedence, table)
     baddies = Set{Tuple{Int, Int}}()
-    edges = sort(edges, by = x -> x[1])
+    edges = sort(edges, by = x -> edge(x))
     res = similar(edges, 0)
     prev = edges[1]
     for i in 2:length(edges)
         cur = edges[i]
-        if cur[1] != prev[1]
+        if edge(cur) != edge(prev)
             push!(res, prev)
             prev = cur
         else
-            if cur[2] != -1 && prev[2] == -1
-                @set! prev[2] = cur[2]
-            elseif cur[3] != -1 && prev[3] == -1
-                @set! prev[3] = cur[3]
+            if lhs(cur) != -1 && lhs(prev) == -1
+                @set! prev.l = cur.l
+            elseif cur.r != -1 && prev.r == -1
+                @set! prev.r = cur.r
             else
                 caught = false
                 for prec in precedence
-                    if (cur[2] == prec[1] && prev[2] == prec[2]) || (cur[2] == prec[2] && prev[2] == prec[1])
-                        @set! prev[2] = prec[1]
+                    if (cur.l == prec[1] && prev.l == prec[2]) || (cur.l == prec[2] && prev.l == prec[1])
+                        @set! prev.l = prec[1]
                         caught = true
-                    elseif (cur[3] == prec[1] && prev[3] == prec[2]) || (cur[3] == prec[2] && prev[3] == prec[1])
-                        @set! prev[3] = prec[1]
+                    elseif (cur.r == prec[1] && prev.r == prec[2]) || (cur.r == prec[2] && prev.r == prec[1])
+                        @set! prev.r = prec[1]
                         caught = true
                     end
                     caught && break
                 end
                 if !caught
-                    if cur[2] != -1 && prev[2] != -1
-                        m1 = min(cur[2], prev[2])
-                        m2 = max(cur[2], prev[2])
+                    if cur.l != -1 && prev.l != -1
+                        m1 = min(cur.l, prev.l)
+                        m2 = max(cur.l, prev.l)
                         push!(baddies, (m1, m2))
-                    elseif cur[3] != -1 && prev[3] != -1
-                        m1 = min(cur[3], prev[3])
-                        m2 = max(cur[3], prev[3])
+                    elseif cur.r != -1 && prev.r != -1
+                        m1 = min(cur.r, prev.r)
+                        m2 = max(cur.r, prev.r)
                         push!(baddies, (m1, m2))
                     end
                 end
@@ -259,6 +259,34 @@ function boundingbox(poly)
     bottomy = p.y
     for p in rest
         p = V(p.x, p.y)
+        if p < leftp
+            leftp = p
+        end
+        if p > rightp
+            rightp = p
+        end
+        if p.y > topy
+            topy = p.y
+        end
+        if p.y < bottomy
+            bottomy = p.y
+        end
+    end
+    top = E(V(leftp.x, topy), V(rightp.x, topy))
+    bottom = E(V(leftp.x, bottomy), V(rightp.x, bottomy))
+
+    return Trapezoid(leftp, rightp, top, bottom, -1)
+end
+
+function boundingbox(v::AbstractVector{T}) where {T <: EData}
+    ed, rest = Iterators.peel(v)
+    p = edge(ed).p
+    leftp = p
+    rightp = p
+    topy = p.y
+    bottomy = p.y
+    for ed in rest
+        p = edge(ed).p
         if p < leftp
             leftp = p
         end
@@ -414,10 +442,6 @@ function topsplit!(t, s, topt)
 
     if topt.top == t.top
         topt.rightp = rightp
-        topt.rt = t.rt
-        if t.rt !== nothing
-            topt.rt.lt = topt
-        end
     else
         topt2 = buildnode(t.leftp, rightp, t.top, edge(s), lhs(s))
         topt.rb = topt2
@@ -425,9 +449,14 @@ function topsplit!(t, s, topt)
         topt = topt2
 
         topt.lt = t.lt
-        if t.lt !== nothing
+        if topt.lt !== nothing
             topt.lt.rt = topt
         end
+    end
+
+    topt.rt = t.rt
+    if topt.rt !== nothing
+        topt.rt.lt = topt
     end
 
     return topt
@@ -438,10 +467,6 @@ function bottomsplit!(t, s, bott)
 
     if bott.bottom == t.bottom
         bott.rightp = rightp
-        bott.rb = t.rb
-        if t.rb !== nothing
-            bott.rb.lb = bott
-        end
     else
         bott2 = buildnode(t.leftp, rightp, edge(s), t.bottom, rhs(s))
         bott.rt = bott2
@@ -449,55 +474,96 @@ function bottomsplit!(t, s, bott)
         bott = bott2
 
         bott.lb = t.lb
-        if t.lb !== nothing
+        if bott.lb != nothing
             bott.lb.rb = bott
         end
     end
 
+    bott.rb = t.rb
+    if bott.rb !== nothing
+        bott.rb.lb = bott
+    end
+
+
     return bott
 end
 
-function finalsplit!(t, s)
+function countknots(node::TrapezoidalSearchNode, p, cnt = 0)
+    node.condition[1] == 0 && return cnt
+    if node.condition[1] == 1
+        if node.condition[2].p == p
+            return cnt + 1
+        end
+        if p.x < node.condition[2].p.x
+            # println("Point left: ", node.condition[2].p)
+            return countknots(node.left, p, cnt)
+        else
+            # println("Point right: ", node.condition[2].p)
+            return countknots(node.right, p, cnt)
+        end
+    else
+        side = sideof(node.condition[2], p)
+        if side == 0
+            return cnt + 1
+        elseif side == 1
+            return countknots(node.left, p, cnt)
+        else
+            return countknots(node.right, p, cnt)
+        end
+    end
+end
+
+function finalsplit!(t, s, isknot)
     q = rp(s)
     node = t.node
     node.data = nothing
     t.node = nothing
 
-    if t.rightp.x <= q.x
+    if t.rightp.x < q.x
         return true, findadjacent(s, t)
     end
 
-    if t.rightp.x > q.x
-        if t.rt !== nothing
-            t.rt.lt = t
+    if t.rightp.x == q.x
+        if isknot
+            return false, t
+        else
+        # here we insert zero size trapezoid 
+            return true, findadjacent(s, t)
         end
-        if t.rb !== nothing
-            t.rb.lb = t
-        end
-        # Introduce rightmost node and split trapezoid vertically
-        t.leftp = q
-        t = buildnode(t)
-        node.left.data.rt = t
-        t.lt = node.left.data
-
-        node.right.data.rb = t
-        t.lb = node.right.data
-
-        t2 = buildnode(node.left.data)
-        node.left.left = t2.node
-        node.left.right = node.right
-        node.left.condition = node.condition
-        node.left.data = nothing
-
-        node.right = t.node
-        node.condition = (1, E(q, q))
     end
+
+    # Questionable... Doesn't make any sense. Delete them???
+    if t.rt !== nothing
+        t.rt.lt = t
+    end
+    if t.rb !== nothing
+        t.rb.lb = t
+    end
+
+    # Introduce rightmost node and split trapezoid vertically
+    t.leftp = q
+    t = buildnode(t)
+    node.left.data.rt = t
+    t.lt = node.left.data
+
+    node.right.data.rb = t
+    t.lb = node.right.data
+
+    t2 = buildnode(node.left.data)
+    node.left.left = t2.node
+    node.left.right = node.right
+    node.left.condition = node.condition
+    node.left.data = nothing
+
+    node.right = t.node
+    node.condition = (1, E(q, q))
 
     return false, t
 end
 
 function update!(tree::TrapezoidalSearchNode, s)
     t = query(tree, edge(s))
+    isknot = countknots(tree, rp(s)) > 0
 
     t, topt, bott = initialsplit!(t, s)
 
@@ -511,12 +577,22 @@ function update!(tree::TrapezoidalSearchNode, s)
         t.node.right = bott.node
         t.node.condition = (2, edge(s))
         
-        splitting, t = finalsplit!(t, s)
+        splitting, t = finalsplit!(t, s, isknot)
     end
 end
 
 function buildsearch(s, lb, rt)
     bb = buildnode(lb, rt, E(V(lb.x, rt.y), rt), E(lb, V(rt.x, lb.y)), -1)
+    root = bb.node
+    for item in s
+        update!(root, item)
+    end
+
+    return root
+end
+
+function buildsearch(s)
+    bb = buildnode(boundingbox(s))
     root = bb.node
     for item in s
         update!(root, item)
