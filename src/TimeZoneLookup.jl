@@ -57,7 +57,7 @@ lp(x::EData) = edge(x).p
 rp(x::EData) = edge(x).q
 sideof(x::EData, r::V) = sideof(edge(x), r)
 
-faceof(x::EData, r::V) = sideof(x, r) ? lhs(x) : rhs(x)
+faceof(x::EData, r::V) = sideof(x, r) == 1 ? lhs(x) : rhs(x)
 
 function sideof(x::E, r::V)
     p = x.p
@@ -67,7 +67,7 @@ function sideof(x::E, r::V)
     d3 = p.y * q.x - p.x * q.y
     ld = d1 * r.y - d2 * r.x
     # @info "Sideof" p q d1 d2 d3 ld
-    return ld > d3
+    return ld > d3 ? 1 : ld < d3 ? -1 : 0
 end
 
 isless(e1::E{T}, e2::E{T}) where T = isless((e1.p, e1.q), (e2.p, e2.q))
@@ -278,7 +278,43 @@ function boundingbox(poly)
     return Trapezoid(leftp, rightp, top, bottom, -1)
 end
 
-function query(node::TrapezoidalSearchNode, p)
+function query(node::TrapezoidalSearchNode, edge::E)
+    node.condition[1] == 0 && return node.data
+    p = edge.p
+    if node.condition[1] == 1
+        if p.x < node.condition[2].p.x
+            # println("Point left: ", node.condition[2].p)
+            return query(node.left, edge)
+        else
+            # println("Point right: ", node.condition[2].p)
+            return query(node.right, edge)
+        end
+    else
+        side = sideof(node.condition[2], p)
+        if side == 1
+            # println("Edge left: ", node.condition[2])
+            return query(node.left, edge)
+        elseif side == -1
+            # println("Edge right: ", node.condition[2])
+            return query(node.right, edge)
+        else
+            side = sideof(node.condition[2], edge.q)
+            if side == 1
+                # println("Edge left (2): ", node.condition[2])
+                return query(node.left, edge)
+            elseif side == -1
+                # println("Edge right (2): ", node.condition[2])
+                return query(node.right, edge)
+            else
+                # TODO: propagate error from here
+                # println("You've got to be kidding...")
+                return node.data
+            end
+        end
+    end
+end
+
+function query(node::TrapezoidalSearchNode, p::V)
     node.condition[1] == 0 && return node.data
     if node.condition[1] == 1
         if p.x < node.condition[2].p.x
@@ -289,7 +325,8 @@ function query(node::TrapezoidalSearchNode, p)
             return query(node.right, p)
         end
     else
-        if sideof(node.condition[2], p)
+        side = sideof(node.condition[2], p)
+        if side == 1
             # println("Edge left: ", node.condition[2])
             return query(node.left, p)
         else
@@ -324,18 +361,15 @@ function findadjacent(s, t)
     # We have two adjacent trapezoids, must choose one of them
     p = lp(s)
     if t.rightp == p
-        return sideof(s, t.rb.top.q) ? t.rb : t.rt
+        return sideof(s, t.rb.top.q) == 1 ? t.rb : t.rt
     end
 
     # General position
-    return sideof(s, t.rightp) ? t.rb : t.rt
+    return sideof(s, t.rightp) == 1 ? t.rb : t.rt
 end
 
 function initialsplit!(t, s)
     p = lp(s)
-    if p.x == t.rightp.x
-        t = findadjacent(s, t)
-    end
     node = t.node
 
     if p.x > t.leftp.x && p.x < t.rightp.x
@@ -389,6 +423,11 @@ function topsplit!(t, s, topt)
         topt.rb = topt2
         topt2.lb = topt
         topt = topt2
+
+        topt.lt = t.lt
+        if t.lt !== nothing
+            topt.lt.rt = topt
+        end
     end
 
     return topt
@@ -408,6 +447,11 @@ function bottomsplit!(t, s, bott)
         bott.rt = bott2
         bott2.lt = bott
         bott = bott2
+
+        bott.lb = t.lb
+        if t.lb !== nothing
+            bott.lb.rb = bott
+        end
     end
 
     return bott
@@ -419,7 +463,7 @@ function finalsplit!(t, s)
     node.data = nothing
     t.node = nothing
 
-    if t.rightp.x < q.x
+    if t.rightp.x <= q.x
         return true, findadjacent(s, t)
     end
 
@@ -449,31 +493,11 @@ function finalsplit!(t, s)
         node.condition = (1, E(q, q))
     end
 
-    if t.rightp.x == q.x
-        if t.rt !== nothing
-            node.left.data.rt = t.rt
-            t.rt.lt = node.left.data
-        end
-
-        if t.rb !== nothing
-            node.right.data.rb = t.rb
-            t.rb.lb = node.right.data
-        end
-    end
-
     return false, t
 end
 
 function update!(tree::TrapezoidalSearchNode, s)
-    p = lp(s)
-    t = query(tree, p)
-
-    # Fix edge case
-    if (t.leftp == p) & (t.top.p == p)
-        if !sideof(s, t.top.q)
-            t = t.lb.rt
-        end
-    end
+    t = query(tree, edge(s))
 
     t, topt, bott = initialsplit!(t, s)
 

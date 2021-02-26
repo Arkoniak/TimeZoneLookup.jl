@@ -41,9 +41,11 @@ end
          EData(E(V(30, 10), V(40, 20)), 1, -1),
          EData(E(V(11, 20), V(40, 20)), -1, 1)
         ]
-    tree = buildsearch(S, V(0, 0), V(50, 50))
-    res = calcpoints(tree)
-    @test res[1] == 224
+    for sp in permutations(S)
+        tree = buildsearch(sp, V(0, 0), V(50, 50))
+        res = calcpoints(tree)
+        @test res[1] == 224
+    end
 end
 
 @testset "Parallelogram with a hole" begin
@@ -55,12 +57,11 @@ end
          EData(E(V(14, 12), V(24, 12)), -1, 1),
          EData(E(V(20, 18), V(24, 12)), 1, -1),
         ]
-    # for sp in permutations(S)
-        # tree = buildsearch(sp, V(0, 0), V(50, 50))
-        tree = buildsearch(S, V(0, 0), V(50, 50))
+    for sp in permutations(S)
+        tree = buildsearch(sp, V(0, 0), V(50, 50))
         res = calcpoints(tree)
         @test res[1] == 571
-    # end
+    end
 end
 
 @testset "Two triangles" begin
@@ -71,12 +72,25 @@ end
          EData(E(V(20, 40), V(30, 10)), 2, 1)
         ]
 
-    # for sp in permutations(S)
-        tree = buildsearch(S, V(0, 0), V(50, 50))
+    for sp in permutations(S)
+        tree = buildsearch(sp, V(0, 0), V(50, 50))
         res = calcpoints(tree)
         @test res[1] == 300
         @test res[2] == 300
-    # end
+    end
+end
+
+@testset "Degenerate point" begin
+    S = [EData(E(V(10, 10), V(20, 40)), -1, 1),
+         EData(E(V(20, 40), V(30, 10)), -1, 1),
+         EData(E(V(20, 40), V(30, 45)), -1, 1),
+         EData(E(V(20, 40), V(40, 40)), 1, -1),
+        ]
+    for sp in permutations(S)
+        tree = buildsearch(sp, V(0, 0), V(50, 50))
+        res = calcpoints(tree)
+        @test res[1] == 640
+    end
 end
 
 end
