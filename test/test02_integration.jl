@@ -107,6 +107,19 @@ end
 
 end
 
+@testset "Bad vertical split" begin
+    S = [EData(E(V(10, 10), V(60, 10)), -1, 1),
+         EData(E(V(40, 80), V(60, 80)), 1, -1),
+         EData(E(V(50, 70), V(60, 80)), -1, 1),
+         EData(E(V(20, 50), V(70, 50)), 1, -1),
+        ]
+    for sp in permutations(S)
+        tree = buildsearch(sp, V(0, 0), V(100, 100))
+        res = calcpoints(tree)
+        @test res[1] == 451
+    end
+end
+
 end
 
 end #module

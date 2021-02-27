@@ -488,51 +488,16 @@ function bottomsplit!(t, s, bott)
     return bott
 end
 
-function countknots(node::TrapezoidalSearchNode, p, cnt = 0)
-    node.condition[1] == 0 && return cnt
-    if node.condition[1] == 1
-        if node.condition[2].p == p
-            return cnt + 1
-        end
-        if p.x < node.condition[2].p.x
-            # println("Point left: ", node.condition[2].p)
-            return countknots(node.left, p, cnt)
-        else
-            # println("Point right: ", node.condition[2].p)
-            return countknots(node.right, p, cnt)
-        end
-    else
-        side = sideof(node.condition[2], p)
-        if side == 0
-            return cnt + 1
-        elseif side == 1
-            return countknots(node.left, p, cnt)
-        else
-            return countknots(node.right, p, cnt)
-        end
-    end
-end
-
-function finalsplit!(t, s, isknot)
+function finalsplit!(t, s)
     q = rp(s)
     node = t.node
     node.data = nothing
     t.node = nothing
 
-    if t.rightp.x < q.x
+    if t.rightp.x <= q.x
         return true, findadjacent(s, t)
     end
 
-    if t.rightp.x == q.x
-        if isknot
-            return false, t
-        else
-        # here we insert zero size trapezoid 
-            return true, findadjacent(s, t)
-        end
-    end
-
-    # Questionable... Doesn't make any sense. Delete them???
     if t.rt !== nothing
         t.rt.lt = t
     end
@@ -563,7 +528,6 @@ end
 
 function update!(tree::TrapezoidalSearchNode, s)
     t = query(tree, edge(s))
-    isknot = countknots(tree, rp(s)) > 0
 
     t, topt, bott = initialsplit!(t, s)
 
@@ -577,7 +541,7 @@ function update!(tree::TrapezoidalSearchNode, s)
         t.node.right = bott.node
         t.node.condition = (2, edge(s))
         
-        splitting, t = finalsplit!(t, s, isknot)
+        splitting, t = finalsplit!(t, s)
     end
 end
 
