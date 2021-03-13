@@ -130,7 +130,7 @@ end
 
 # TODO: next couple of functions is redundant
 function topsplit!(t, s, topt)
-    rightp = min(t.rightp, rp(s))
+    rightp = t.rightp.x < rp(s).x ? t.rightp : rp(s)
 
     if topt.top == t.top
         topt.rightp = rightp
@@ -155,7 +155,7 @@ function topsplit!(t, s, topt)
 end
 
 function bottomsplit!(t, s, bott)
-    rightp = min(t.rightp, rp(s))
+    rightp = t.rightp.x < rp(s).x ? t.rightp : rp(s)
 
     if bott.bottom == t.bottom
         bott.rightp = rightp
