@@ -193,3 +193,43 @@ function boundingbox(v::AbstractVector{T}) where {T <: EData}
     return Trapezoid(leftp, rightp, top, bottom, -1)
 end
 
+########################################
+# Angle sorting facilities
+########################################
+
+function pseudoangle1(v)
+    atan(v.y, v.x)
+end
+
+function pseudoangle2(v)
+    copysign(1. - v.x/(abs(v.x)+abs(v.y)), v.y)
+end
+
+# http://steve.hollasch.net/cgindex/math/fowler.html
+# https://stackoverflow.com/a/27253590/1494135
+function pseudoangle3(v)
+    # 1 for above, 0 for below the diagonal/anti-diagonal
+    diag  = v.x > v.y
+    adiag = v.x > -v.y
+
+    r = !adiag ? 4 : 0
+
+    if (v.y == 0)
+        return r
+    end
+
+    if (diag ⊻ adiag)
+        r += 2 - v.x / v.y
+    else
+        r += v.y / v.x
+    end
+
+    return r
+end
+
+function isangleless(v1, v2)
+    a1 = abs(v1.x) + abs(v1.y)
+    a2 = abs(v2.x) + abs(v2.y)
+
+    a2*copysign(a1 - v1.x, v1.y) < a1*copysign(a2 - v2.x, v2.y)
+end

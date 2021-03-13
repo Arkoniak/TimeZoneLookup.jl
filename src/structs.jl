@@ -18,6 +18,8 @@ struct V{T}
     y::T
 end
 zero(::Type{V{T}}) where T = V(zero(T), zero(T))
+V(p::Shapefile.Point) = V(p.x, p.y)
+
 function show(io::IO, v::V)
     print(io, "{", v.x, ", ", v.y, "}")
 end
@@ -49,7 +51,7 @@ sideof(x::EData, r::V) = sideof(edge(x), r)
 
 faceof(x::EData, r::V) = sideof(x, r) == 1 ? lhs(x) : rhs(x)
 
-function sideof(x::E, r::V)
+function sideof(x::E, r::V, tol = 0)
     p = x.p
     q = x.q
     d1 = q.x - p.x
@@ -57,11 +59,12 @@ function sideof(x::E, r::V)
     d3 = p.y * q.x - p.x * q.y
     ld = d1 * r.y - d2 * r.x
     # @info "Sideof" p q d1 d2 d3 ld
-    return ld > d3 ? 1 : ld < d3 ? -1 : 0
+    return ld - d3 > tol ? 1 : d3 - ld > tol ? -1 : 0
 end
 
-isless(e1::E{T}, e2::E{T}) where T = isless((e1.p, e1.q), (e2.p, e2.q))
-isless(v1::V{T}, v2::V{T}) where T = isless((v1.x, v1.y), (v2.x, v2.y))
+# isless(e1::E{T}, e2::E{T}) where T = isless((e1.p, e1.q), (e2.p, e2.q))
+# isless(v1::V{T}, v2::V{T}) where T = isless((v1.x, v1.y), (v2.x, v2.y))
+isless(v1::V, v2::V) = (v1.y > v2.y) | ((v1.y == v2.y) & (v1.x < v2.x))
 
 abstract type AbstractTrapezoid end
 mutable struct TrapezoidalSearchNode{T, T1 <: AbstractTrapezoid} 
